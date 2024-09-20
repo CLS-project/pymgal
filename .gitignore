@@ -1,0 +1,4 @@
+build
+dist
+pymgal.egg-info
+pymgal/version.py
