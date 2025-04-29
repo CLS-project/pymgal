@@ -43,6 +43,7 @@ class MockObservation(object):
     dustf         : The function used for dust attenuation. Default: None
                         Can be either None, "charlot_fall" or "calzetti" (ie Charlot and Fall (2000)  or Calzetti et al (2000))
                         The user may also specify a custom dust function here by defining it beforehand and passing it to dustf
+    dustf_los      : The function used for line of sight dust extinction. Default None. If None, no line of sight dust extinction will be calculated
     filters       : The list of filters used in projections. Default: ["sdss_r"]
                         Can contain multiple filters. Full list can be found in the pymgal/filters directory
     custom_model  : If you select a custom SSP_model object, PyMGal will ignore the "model", and "imf" parameters above and will use the custom one instead. Default: None
@@ -97,7 +98,7 @@ class MockObservation(object):
         defaults = {
             "model": SSP_models('bc03', IMF='chab', has_masses=True),
             "dustf": None,
-            "los_dust": False,
+            "dustf_los": None,
             "filters": ["sdss_r"],
             "out_val": "flux",
             "mag_type": "AB",
@@ -134,18 +135,22 @@ class MockObservation(object):
         sample_sim_file = self.sim_file
         if os.path.isdir(self.sim_file):
             sample_sim_file = sorted(glob(os.path.join(self.sim_file,'*')))[0]
+            
+        read_gas = False
+        if self.params["dustf_los"] is not None:
+            read_gas = True
+            
 
         # Remove .hdf5 if an hdf5 file and remove the .X if the snapshot is split into parts (eg snap_100.0.hdf5 -> snap_100)
         self.snapname = os.path.basename(sample_sim_file).replace('.hdf5', '') if ".hdf5" in os.path.basename(sample_sim_file) else os.path.basename(sample_sim_file)
         self.snapname = re.sub(r'\.\d+$', '', self.snapname) if re.search(r'\.\d+$', self.snapname) else self.snapname
-        self.simd = load_data(self.sim_file, snapshot=True, read_gas=self.params["los_dust"], center=self.coords[:3], radius=self.coords[-1])
+        self.simd = load_data(self.sim_file, snapshot=True, read_gas=read_gas, center=self.coords[:3], radius=self.coords[-1])
 
         if not self.params["quiet"]:
             print("Snapshot data successfully read:", self.sim_file)
             if len(self.simd.S_pos) == 0:
                 raise ValueError("Found no stellar particles within the selected region. Now exiting PyMGal. Please try again with different coordinates and/or a larger radius.")
-            
-       
+        
         # Initialize magnitudes as None since they have not yet been computed
         self.mag = None
         self.stored_params = None # For tracking changes in parameters
@@ -204,7 +209,7 @@ class MockObservation(object):
             if np.max(self.simd.S_metal) > np.max(sspmod.metals):
                 print("WARNING: The maximum metallicity found in the snapshot's stellar particles is higher than the maximum metallicity of your SSP model. This will cause a bias in high-metallicity particles. Consider adding SSP models with higher metallicity.")
        
-             
+
         # Compute magnitudes
         is_vega = self.params["mag_type"].lower().startswith('vega')
         mag = filters_list.calc_energy(sspmod, self.simd, dust_func=dustf, vega=is_vega, unit=self.params["out_val"], rest_frame=self.params["rest_frame"], noise=self.params["noise"], redshift=min_redshift, outspec_res=self.params["spec_res"])
@@ -221,7 +226,7 @@ class MockObservation(object):
     def project_worker(self, proj_direc, output_dir, lsmooth=None, spectrum=None):
         if not self.params["quiet"]:
             print("Projecting to:", proj_direc)
-        pj = projection(self.mag, self.simd, los_dust=self.params["los_dust"], npx=self.params["npx"], unit=self.params["out_val"], AR=self.params["AR"], redshift=self.params["z_obs"], p_thick=self.params["p_thick"],
+        pj = projection(self.mag, self.simd, dustf_los=self.params["dustf_los"], npx=self.params["npx"], unit=self.params["out_val"], AR=self.params["AR"], redshift=self.params["z_obs"], p_thick=self.params["p_thick"],
                            axis=proj_direc, mag_type=self.params["mag_type"], ksmooth=self.params["ksmooth"], g_soft=self.params["g_soft"], lsmooth=lsmooth, psf=self.params["psf"], noise_dict=self.noise_dict, spectrum=spectrum, outmas=self.params["outmas"], 
                            outage=self.params["outage"], outmet=self.params["outmet"])
  
@@ -263,6 +268,13 @@ class MockObservation(object):
  
         worker_args = [(proj_direc, output_dir, lsmooth, spectrum) for proj_direc in projections]
 
+        if not self.params["quiet"]:
+            print("Projecting data to 2D.")
         # Use multiprocessing to parallelize the project_worker calls
-        with Pool(self.params["ncpu"]) as pool:
-            pool.starmap(self.project_worker, worker_args)
+        if self.params["ncpu"] == 1:
+            for proj_direc in projections:
+                self.project_worker(proj_direc, output_dir, lsmooth, spectrum)
+        else:
+            with Pool(self.params["ncpu"]) as pool:
+                pool.starmap(self.project_worker, worker_args)
+        
