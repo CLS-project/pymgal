@@ -415,5 +415,5 @@ class SSP_models(object):
             seds *= (1 + non_neg_z)
         
         if not self.quiet: 
-            print("Interpolation for the SEDs are done.")
+            print("Interpolation for the SEDs is complete.")
         return vs, seds
