@@ -51,7 +51,13 @@ class load_data(object):
         self.S_metal = np.array([])
         self.S_mass = np.array([])
         self.S_pos = np.array([])
+        
         self.G_pos = np.array([])  # Positions of gas particles
+        self.G_metal = np.array([])
+        self.G_mass = np.array([])
+        self.G_temp = np.array([])
+        self.G_density = np.array([])
+        
         self.cosmology = None  # default wmap7
         self.scale_factor = 1.0  # z = 0
         self.redshift = 0.0
@@ -95,19 +101,19 @@ class load_data(object):
         self.scale_factor = head.Time
         self.redshift = head.Redshift  # if head[3] > 0 else 0.0
         self.Uage = self.cosmology.age(self.redshift).value
-
+        
         
         
         if is_hdf5:  # If file is hdf5
             spos = readsnap(filename, "Coordinates", ptype=4, quiet=True)
             gpos = readsnap(filename, "Coordinates", ptype=0, quiet=True) if self.read_gas else None   # Find gas particles if requested, otherwise let g_pos be None
-            self.G_mass = readsnap(filename, mass_string, ptype=0, quiet=True) if self.read_gas else None 
+            
 
         else:                          # If file is not hdf5
             spos = readsnap(filename, "POS ", ptype=4, quiet=True)
             gpos = readsnap(filename, "POS ", ptype=0, quiet=True) if self.read_gas else None
-            self.G_mass = readsnap(filename, "MASS", ptype=0, quiet=True) if self.read_gas else None
-
+            
+            
         
         if (self.center is not None) and (self.radius is not None):
             # r = np.sqrt(np.sum((spos - self.center)**2, axis=1))
@@ -130,6 +136,7 @@ class load_data(object):
             self.center = np.asarray(self.center)
         else:
             ids = np.ones(head.totnum[4], dtype=bool)
+            gas_ids = np.ones(head.totnum[0], dtype=bool)
             self.S_pos = spos  # - np.mean(spos, axis=0)
             self.G_pos = gpos if self.read_gas else self.G_pos
             self.center = np.mean(spos, axis=0)
@@ -139,24 +146,42 @@ class load_data(object):
         if is_hdf5:
             age = readsnap(filename, GFM_string + "StellarFormationTime",ptype=4, quiet=True)[ids]
             self.S_mass = readsnap(filename, mass_string, ptype=4, quiet=True)[ids] * 1.0e10 / head.HubbleParam   # either "Masses" or "Mass", depending on what we found above
+            
+            if self.read_gas:
+                self.G_mass = readsnap(filename, mass_string, ptype=0, quiet=True)[gas_ids] * 1.0e10 / head.HubbleParam  
+                self.G_temp = readsnap(filename, "Temperature", ptype=0, quiet=True)[gas_ids]
+                self.G_density = readsnap(filename, "Density", ptype=0, quiet=True)[gas_ids] * 1.0e10 / head.HubbleParam    # convert density from 10^10 (M_solar/h)(ckpc/h)^3 into M_solar (ckpc/h)^3. REMEMBER: convert distances to kpc^3 at projection time
+                
             if head.F_Metals > 1:
                 self.S_metal = readsnap(filename, GFM_string + "Metallicity", ptype=4, quiet=True)[:,0] # note this is only for SIMBA simulation
+                self.G_metal = readsnap(filename, GFM_string + "Metallicity", ptype=0, quiet=True)[:,0] if self.read_gas else None
             else:
                 self.S_metal = readsnap(filename, GFM_string + "Metallicity", ptype=4, quiet=True)
+                self.G_metal = readsnap(filename, GFM_string + "Metallicity", ptype=0, quiet=True) if self.read_gas else None
                 
         else:
             age = readsnap(filename, "AGE ", quiet=True)[:head.totnum[4]][ids]
             self.S_mass = readsnap(filename, "MASS", ptype=4, quiet=True)[ids] * 1.0e10 / head.HubbleParam  # in M_sun
+
+            if self.read_gas:
+                self.G_mass = readsnap(filename, "MASS", ptype=0, quiet=True)[gas_ids] * 1.0e10 / head.HubbleParam
+                self.G_temp = readsnap(filename, "TEMP", ptype=0, quiet=True)[gas_ids]   # Gas temperature
+                self.G_density = readsnap(filename, "RHO ", ptype=0, quiet=True)[gas_ids]  * 1.0e10 / head.HubbleParam   # convert density from 10^10 (M_solar/h)(ckpc/h)^3 into M_solar (ckpc/h)^3. REMEMBER: convert distances to kpc^3 at projection time
+                
             if readsnap(filename, "Z   ", ptype=4, nmet=nmetal, quiet=True) is not None:
                 self.S_metal = readsnap(filename, "Z   ", ptype=4, nmet=nmetal, quiet=True)
+                self.G_metal = readsnap(filename, "Z   ", ptype=0, nmet=nmetal, quiet=True) if self.read_gas else None
             else:
                 self.S_metal = readsnap(filename, "ZTOT", ptype=4, nmet=nmetal, quiet=True)
+                self.G_metal = readsnap(filename, "ZTOT", ptype=0, nmet=nmetal, quiet=True) if self.read_gas else None
             
         age = self.Uage - self.cosmology.age(1. / age - 1).value
         age[age < 0] = 0  # remove negative ages
         self.S_age = age * 1.0e9  # in yrs
         self.S_metal = self.S_metal[ids]
+        self.G_metal = self.G_metal[gas_ids] if self.read_gas else None
 
+        
     def _load_yt(self, yt):
         # Need to be done soon
         sp = yt.sperical(yt)
