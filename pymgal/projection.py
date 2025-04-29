@@ -155,7 +155,7 @@ class projection(object):
 
     def __init__(self, data, simd, axis="z", npx=512, AR=None, redshift=None, p_thick=None,
                  SP=None, unit='flux', mag_type="", ksmooth=0, lsmooth=None, g_soft=None, psf=None, noise_dict=None, 
-                 outmas=False, outage=False, outmet=False, spectrum=None, los_dust=True):
+                 outmas=False, outage=False, outmet=False, spectrum=None, dustf_los=None):
 
         self.axis = axis
         if isinstance(npx, type("")) or isinstance(npx, type('')):
@@ -181,7 +181,7 @@ class projection(object):
         self.ksmooth = ksmooth
         self.noise_dict = noise_dict
         self.spectrum = spectrum
-        self.los_dust = los_dust
+        self.dustf_los = dustf_los
         self.N_gas =  np.array([])   # the number of gas particles in front of each stellar particle
         if ksmooth < 0:
             raise ValueError("ksmooth should be a non-negative integer")
@@ -209,8 +209,9 @@ class projection(object):
         ages = s.S_age
         metals = s.S_metal
 
-        gpos = np.copy(s.G_pos) / s.cosmology.h / (1.+ s.redshift) if self.los_dust else None # convert gas to physical to match positions of stellar particles
-        gpos = gpos - self.cc / s.cosmology.h / (1.+ s.redshift) if self.los_dust else gpos
+        gpos = np.copy(s.G_pos) / s.cosmology.h / (1.+ s.redshift) if self.dustf_los is not None else None # convert gas to physical to match positions of stellar particles
+        gpos = gpos - self.cc / s.cosmology.h / (1.+ s.redshift) if self.dustf_los is not None else gpos
+        gdens = s.G_density * s.cosmology.h**3 * (1.+ s.redshift)**3  if self.dustf_los is not None else gpos  # Convert from M_solar / (ckpc/h)^3 into M_solar/kpc^3
         
 
         # If you're given a projection vector array, convert it to an angle
@@ -224,10 +225,10 @@ class projection(object):
         if isinstance(self.axis, type('')):
             if self.axis.lower() == 'y':  # x-z plane
                 pos = pos[:, [0, 2, 1]]
-                gpos = gpos[:, [0, 2, 1]] if self.los_dust else gpos
+                gpos = gpos[:, [0, 2, 1]] if self.dustf_los is not None else gpos
             elif self.axis.lower() == 'x':  # y - z plane
                 pos = pos[:, [2, 1, 0]]
-                gpos = gpos[:, [2, 1, 0]] if self.los_dust else gpos
+                gpos = gpos[:, [2, 1, 0]] if self.dustf_los is not None else gpos
             else:
                 if self.axis.lower() != 'z':  # project to xy plane
                     raise ValueError("Do not accept this value %s for projection" % self.axis)
@@ -246,7 +247,7 @@ class projection(object):
                      [cb * sg, ca * cg + sa * sb * sg, ca * sb * sg - cg * sa],
                      [-sb,     cb * sa,                ca * cb]], dtype=np.float64)
                 pos = np.dot(pos, Rxyz)
-                gpos = np.dot(gpos, Rxyz) if self.los_dust else gpos
+                gpos = np.dot(gpos, Rxyz) if self.dustf_los is not None else gpos
             else:
                 raise ValueError(
                     "Do not accept this value %s for projection" % self.axis)
@@ -259,8 +260,8 @@ class projection(object):
             old_pos_size = len(pos) # keep track of the number of particles we had before we cut the z thick 
             pos = pos[ids]
 
-            gas_ids = (gpos[:, 2] > -self.p_thick) & (gpos[:, 2] < self.p_thick) if self.los_dust else None
-            gpos = gpos[gas_ids] if self.los_dust else gpos
+            gas_ids = (gpos[:, 2] > -self.p_thick) & (gpos[:, 2] < self.p_thick) if self.dustf_los is not None else None
+            gpos = gpos[gas_ids] if self.dustf_los is not None else gpos
             lsmooth = lsmooth[ids] if lsmooth is not None else None
             masses = masses[ids]
             ages = ages[ids]
@@ -309,16 +310,31 @@ class projection(object):
         if np.all((x_bins > mid_xpx) | (x_bins < -mid_xpx)) or np.all((y_bins > mid_ypx) | (y_bins < -mid_ypx)):
             print("WARNING: PyMGal found particles within the specified region, but they do not fit within the field of view of the output image. If an empty image is produced, consider either expanding your field of view or modifying the coordinates of your projection.")
         
-        if self.los_dust:
+        if self.dustf_los is not None:
             x_bins_gas = np.digitize(gpos[:, 0], xx) 
             y_bins_gas = np.digitize(gpos[:, 1], yy) 
             gas_depth =  gpos[:, 2] 
             star_depth = pos[:, 2]
+            gas_temps = s.G_temp
+            gas_densities_cgs = np.multiply(gdens, 1.989e33 / utils.convert_length(1 , incoming='kpc', outgoing='cm')**3)    # Convert from M_solar / (ckpc/h)^3 into M_solar/kpc
+            gas_metals = s.G_metal
+
+            kappas = self.dustf_los.get_kappa(gas_temps, gas_densities_cgs, gas_metals)  #dusts.los_extinction.get_kappa(gas_temps, gas_densities_cgs, gas_metals)
+           
             px_area_cm = utils.convert_length(self.pxsize , incoming='kpc', outgoing='cm') ** 2
-            m_gas_grams = dusts.gas_masses_los(x_bins_gas, y_bins_gas, gas_depth, x_bins, y_bins, star_depth, s.G_mass)  * 1.989e33
-            self.taus = dusts.optical_depth(m_gas_grams, px_area_cm)
-            
-        
+            m_gas, avg_kappas = dusts.gas_masses_los(x_bins_gas, y_bins_gas, gas_depth, x_bins, y_bins, star_depth, s.G_mass, kappa=kappas)
+            m_gas_grams = m_gas *  1.989e33
+            self.taus = self.dustf_los.get_tau(avg_kappas, m_gas_grams, px_area_cm)
+                   
+            for i in dt.keys():
+                if self.flux.lower() == "magnitude":
+                    flux_mags = 10**(-dt[i]/2.5)
+                    flux_mags = np.multiply(flux_mags, np.exp(-self.taus))
+                    dt[i] = -2.5*np.log10(flux_mags)
+                else:
+                    dt[i] = np.multiply(dt[i], np.exp(-self.taus))
+                
+                
         #self.cc = center  # real center in the data
         # If smoothing is set to off
         if self.ksmooth == 0:
@@ -444,8 +460,9 @@ class projection(object):
                         self.outd[i][:, :, j] = convolve2d(self.outd[i][:, :, j], self.psf, mode='same', boundary='symm')
                 else:
                     self.outd[i] = convolve2d(self.outd[i], self.psf, mode='same', boundary='symm')
-                    
-
+                 
+    
+        
     def write_fits_image(self, fname, comments='None', overwrite=False):
         r"""
         Generate a image by binning X-ray counts and write it to a FITS file.
@@ -522,7 +539,7 @@ class projection(object):
                 hdu.header.comments["PIXVAL"] = "The wavelength for the spectrum"
             elif i == 'sed':
                 hdu.header["PIXVAL"] = "erg/s/cm^2/Hz"
-                hdu.header.comments["PIXVAL"] = "The spectrum in Fv for an object 10 pc away."
+                hdu.header.comments["PIXVAL"] = "The spectrum in Fv for the object."
             else:
                 hdu.header["PIXVAL"] = "years" if i.lower() == "age" else "metallicity" if i.lower() == "metal" else "M_sun" if i.lower() == "mass" \
                                         else "erg/s" if self.flux == "luminosity" else "erg/s/cm^2" if self.flux == "flux" else "erg/s/cm^2/Hz" if self.flux == "fv" \
