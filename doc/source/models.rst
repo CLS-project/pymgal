@@ -108,6 +108,8 @@ Dust functions
 
 If you want to model the effect of dust in the SEDs, PyMGal features two dust functions that are described in Charlot and Fall (2000) or Calzetti et al. (2000). This will dim the SEDs based on the physical law you select. You can call these functions by creating a dust object and passing it to a MockObservation. 
 
+You can also incorporate the effect of dust extinction along the line of sight. PyMGal estimates this effect by calculating the column density of gas particles within a pixel N_g (i.e. gas mass divided by pixel area). It then multiplies this column density by the opacity kappa, which the user can choose to match their research needs. The brightnesses are then dimmed by a factor of e^(-kappa*N_g). 
+
 .. code-block:: python
    
    from pymgal import MockObservation, SSP_models, dusts
@@ -118,8 +120,11 @@ If you want to model the effect of dust in the SEDs, PyMGal features two dust fu
    charlot_fall_dust = dusts.charlot_fall()
    obs_charlot_fall = MockObservation("/path/to/snapshot", [x_c, y_c, z_c, r], params = {"dustf": charlot_fall_dust})
 
-   
- 
- 
+   los_dust = dusts.los_extinction(kappa=10)
+   obs_los_dust = MockObservation("/path/to/snapshot", [x_c, y_c, z_c, r], params = {"dustf_los":dust_los})
+
+You may use whichever combination of dust best suits your research needs. This may include both "dustf" and "dustf_los", neither, or only one of the two. Typically using both will produce the most realistic observations (assuming kappa is given an appropriate value), but line of sight dust exctinction will be more computationally expensive.
+
+In the above line of sight dust treatment, we set kappa=10. This means that the opacity will be treated as a constant value of 10 cm^2/g. However, you can also change this value or infer it from the gas properties by setting kappa="kappa_e" (deriving the opacity from electron scattering), "kappa_k" (Kramer's opacity for free-free/bound-free absooprtion), "kappa_m" (molecular opacity), "kappa_h" (negative hydrogen ion opacity), "kappa_rad" (the total radiative opacity considering the effects from the previous 4 sources), or "kappa_d" (dust opacity - still a work in progress).
  
    
