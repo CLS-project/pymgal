@@ -53,6 +53,7 @@ def __init__(self, sim_file, coords, params=None):
         defaults = {
             "model": SSP_models('bc03', IMF='chab', has_masses=True),
             "dustf": None,
+            "dustf_los": None,
             "filters": ["sdss_r"],
             "out_val": "flux",
             "mag_type": "AB",
