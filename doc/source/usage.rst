@@ -45,6 +45,7 @@ There are many different parameters you can modify for your magnitude calculatio
            defaults = {
                "model": SSP_models('bc03', IMF='chab', has_masses=True),
                "dustf": None,
+               "dustf_los": None,
                "filters": ["sdss_r"],
                "out_val": "flux",
                "mag_type": "AB",
@@ -78,7 +79,10 @@ This document describes the various parameters used in PyMGal for generating opt
     **Type: class pymgal.SSP_models.** The stellar population model you want to assume. PyMGal supports various types of models depending on your scientific goals. For more details, see :ref:`SSP Models <ssp_models>`.
 
 - **dustf**:  
-    **Type: class pymgal.dusts.** The dust function used to dim the SEDs. Options include None (no dust), charlot_fall() (Charlot and Fall 2000), or calzetti() (Calzetti et al. 2000). You can also define a custom dust function within the dusts.py file if needed. 
+    **Type: class pymgal.dusts.** The dust attenuation curve used to dim the SEDs. Options include None (no dust), charlot_fall() (Charlot and Fall 2000), or calzetti() (Calzetti et al. 2000). Some SPS software such as FSPS allows you to add this effect directly to the SED model files, in which case you should set this to None to avoid double counting. See :ref:`Dust functions <dust_funcs>` for more details.
+
+- **dustf_los**:  
+    **Type: class pymgal.dusts.** The preferred treatment of dust extinction along the line of sight. This is different from the above dust function because it is applied after projecting the data and inferring the dust in the line of sight based off the column density of the gas. This may be used in combination with the above `"dustf`" if desired. This will have the effect of dimming dense regions due to the high amount of dust in the foreground. See :ref:`Dust functions <dust_funcs>` for more details.
 
 - **filters**:  
     **Type: list.** The telescope filters you want to mimic in your mock observations. For more details, see :ref:`Filters <filters>`.
