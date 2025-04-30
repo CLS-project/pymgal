@@ -28,3 +28,4 @@ exclude_patterns = []
 
 html_theme = 'sphinx_pdj_theme'
 html_theme_path = [sphinx_pdj_theme.get_html_theme_path()]
+html_static_path = ['_static']
