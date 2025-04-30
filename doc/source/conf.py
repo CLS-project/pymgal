@@ -11,7 +11,7 @@ import sphinx_pdj_theme
 project = 'pymgal'
 copyright = '2024, Weiguang Cui, Patrick Janulewicz'
 author = 'Weiguang Cui, Patrick Janulewicz'
-release = '1.0'
+release = '1.1'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
