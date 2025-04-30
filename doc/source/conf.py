@@ -1,3 +1,5 @@
+import sphinx_pdj_theme
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -24,5 +26,5 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
-html_static_path = ['_static']
+html_theme = 'sphinx_pdj_theme'
+html_theme_path = [sphinx_pdj_theme.get_html_theme_path()]
